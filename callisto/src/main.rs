@@ -21,7 +21,17 @@ enum Engine {
     DuckDB,
 }
 
-fn main() {
+impl Engine {
+    fn execute(&self, query: &str) -> anyhow::Result<()> {
+        let mut engine = match self {
+            Engine::Polars => callisto::Engine::Polars.new(),
+            Engine::DuckDB => callisto::Engine::DuckDB.new(),
+        }?;
+        engine.execute(query)
+    }
+}
+
+fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     println!(
@@ -29,4 +39,6 @@ fn main() {
         args.command,
         &serde_json::to_string(&args.engine).unwrap()
     );
+
+    args.engine.execute(&args.command)
 }
