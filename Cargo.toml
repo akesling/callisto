@@ -8,6 +8,8 @@ resolver="2"
 [workspace.dependencies]
 anyhow = "1.0.86"
 clap = { version = "4.5.7", features = ["derive"]}
-polars = { version = "0.40.0", features = ["sql"]}
+polars = { version = "0.40.0", features = ["sql", "parquet"]}
+polars-lazy = { version = "*", features = ["parquet"] } # Version set based on inclusion by `polars` (above)
 serde = "1.0.203"
 serde_json = "1.0.117"
+sqlparser = { version = "0.47.0", features = ["serde", "visitor"]}

@@ -19,6 +19,7 @@ enum Engine {
     #[default]
     Polars,
     DuckDB,
+    DataFusion,
 }
 
 impl Engine {
@@ -26,6 +27,7 @@ impl Engine {
         let mut engine = match self {
             Engine::Polars => callisto::Engine::Polars.new(),
             Engine::DuckDB => callisto::Engine::DuckDB.new(),
+            Engine::DataFusion => callisto::Engine::DataFusion.new(),
         }?;
         engine.execute(query)
     }
