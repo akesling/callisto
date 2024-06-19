@@ -1,0 +1,5 @@
+# vim
+*.swp
+
+/target
+/schema/src/generated

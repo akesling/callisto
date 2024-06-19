@@ -1,0 +1,9 @@
+[workspace]
+members = [
+    "callisto",
+]
+
+resolver="2"
+
+[workspace.dependencies]
+[workspace.build-dependencies]
