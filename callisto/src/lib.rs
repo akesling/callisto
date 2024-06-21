@@ -1,2 +1,2 @@
 mod engines;
-pub use engines::Engine;
+pub use engines::{Engine, EngineInterface};

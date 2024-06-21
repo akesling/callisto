@@ -23,13 +23,12 @@ enum Engine {
 }
 
 impl Engine {
-    async fn execute(&self, query: &str) -> anyhow::Result<()> {
-        let mut engine = match self {
+    pub fn new(&self) -> anyhow::Result<Box<dyn callisto::EngineInterface>> {
+        match self {
             Engine::Polars => callisto::Engine::Polars.new(),
             Engine::DuckDB => callisto::Engine::DuckDB.new(),
             Engine::DataFusion => callisto::Engine::DataFusion.new(),
-        }?;
-        engine.execute(query).await
+        }
     }
 }
 
@@ -43,5 +42,6 @@ async fn main() -> anyhow::Result<()> {
         &serde_json::to_string(&args.engine).unwrap()
     );
 
-    args.engine.execute(&args.command).await
+    let mut engine = args.engine.new()?;
+    engine.execute(&args.command).await
 }
