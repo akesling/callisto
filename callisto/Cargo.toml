@@ -9,6 +9,7 @@ arrow = { workspace = true }
 async-trait = { workspace = true }
 clap = { workspace = true }
 datafusion = { workspace = true }
+duckdb = { workspace = true }
 polars = { workspace = true }
 polars-lazy = { workspace = true }
 serde = { workspace = true }

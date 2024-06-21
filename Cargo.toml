@@ -11,6 +11,7 @@ arrow = "52.0.0"
 async-trait = "0.1.80"
 clap = { version = "4.5.7", features = ["derive"] }
 datafusion = "39.0.0"
+duckdb = "0.10.2"
 polars = { version = "0.40.0", features = ["sql", "parquet"] }
 polars-lazy = { version = "*", features = ["parquet"] } # Version set based on inclusion by `polars` (above)
 serde = "1.0.203"
