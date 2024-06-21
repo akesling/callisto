@@ -23,17 +23,18 @@ enum Engine {
 }
 
 impl Engine {
-    fn execute(&self, query: &str) -> anyhow::Result<()> {
+    async fn execute(&self, query: &str) -> anyhow::Result<()> {
         let mut engine = match self {
             Engine::Polars => callisto::Engine::Polars.new(),
             Engine::DuckDB => callisto::Engine::DuckDB.new(),
             Engine::DataFusion => callisto::Engine::DataFusion.new(),
         }?;
-        engine.execute(query)
+        engine.execute(query).await
     }
 }
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     println!(
@@ -42,5 +43,5 @@ fn main() -> anyhow::Result<()> {
         &serde_json::to_string(&args.engine).unwrap()
     );
 
-    args.engine.execute(&args.command)
+    args.engine.execute(&args.command).await
 }

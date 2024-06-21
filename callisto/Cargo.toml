@@ -5,9 +5,13 @@ edition = "2021"
 
 [dependencies]
 anyhow = { workspace = true }
+arrow = { workspace = true }
+async-trait = { workspace = true }
 clap = { workspace = true }
+datafusion = { workspace = true }
 polars = { workspace = true }
 polars-lazy = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sqlparser = { workspace = true }
+tokio = { workspace = true }

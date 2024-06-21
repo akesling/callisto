@@ -4,6 +4,7 @@ use sqlparser::ast;
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
+use datafusion::datasource::file_format::options::ParquetReadOptions;
 use polars_lazy::frame::LazyFrame;
 
 pub enum Engine {
@@ -16,13 +17,15 @@ impl Engine {
     pub fn new(&self) -> anyhow::Result<Box<dyn EngineInterface>> {
         Ok(match self {
             Engine::Polars => Box::new(PolarsImpl::default()),
+            Engine::DataFusion => Box::new(DataFusionImpl::default()),
             _ => todo!("Only Polars engine is implemented."),
         })
     }
 }
 
+#[async_trait::async_trait]
 pub trait EngineInterface {
-    fn execute(&mut self, query: &str) -> anyhow::Result<()>;
+    async fn execute(&mut self, query: &str) -> anyhow::Result<()>;
 }
 
 #[derive(Default)]
@@ -34,46 +37,41 @@ struct PolarsImpl {
 impl PolarsImpl {
     fn load_tables(&mut self, query: &ast::Statement) -> anyhow::Result<ast::Statement> {
         let mut rewritten = query.clone();
+        let mut new_tables = Vec::new();
         ast::visit_relations_mut(&mut rewritten, |table| {
             let symbol_or_file: &str = &table.0[0].value;
-            // println!(
-            //     "Relation ({}) visited: {}",
-            //     symbol_or_file,
-            //     serde_json::to_string_pretty(&table).unwrap()
-            // );
-            if let Some(table_name) = self.fs_name_to_table_name.get(symbol_or_file) {
-                table.0[0].value = table.0[0].value.replace(symbol_or_file, table_name);
-            } else if symbol_or_file.ends_with(".parquet") {
-                let table_name = format!("tbl_{}", symbol_or_file
-                    .split('/')
-                    .last()
-                    .unwrap()
-                    .replace(".", "_")
-                    .replace("-", "_")
-                    .replace("*", "_"));
-                let frame = LazyFrame::scan_parquet(&symbol_or_file, Default::default());
-                match frame {
-                    Ok(frame) => {
-                        self.fs_name_to_table_name
-                            .insert(symbol_or_file.to_string(), table_name.clone());
-                        table.0[0].value = table.0[0].value.replace(symbol_or_file, &table_name);
-                        self.context.register(&table_name, frame);
-                    }
-                    Err(error) => println!(
-                        "Warning -- loading referenced parquet path ({}) failed with error: {}",
-                        symbol_or_file, error
-                    ),
-                }
-            }
+            let table_name = if let Some(table_name) = self.fs_name_to_table_name.get(symbol_or_file) {
+                table_name.to_string()
+            } else {
+                let table_name = derive_table_from_fs_name(symbol_or_file);
+                new_tables.push((symbol_or_file.to_string(), table_name.clone()));
+                table_name
+            };
+            table.0[0].value = table.0[0].value.replace(symbol_or_file, &table_name);
             core::ops::ControlFlow::<()>::Continue(())
         });
+
+        for (fs_name, table_name) in new_tables {
+            let frame = LazyFrame::scan_parquet(&fs_name, Default::default());
+            match frame {
+                Ok(frame) => {
+                    self.fs_name_to_table_name
+                        .insert(fs_name.to_string(), table_name.clone());
+                    self.context.register(&table_name, frame);
+                }
+                Err(error) => println!(
+                    "Warning -- loading referenced parquet path ({}) failed with error: {}",
+                    fs_name, error
+                ),
+            }
+        }
         Ok(rewritten)
     }
 }
 
+#[async_trait::async_trait]
 impl EngineInterface for PolarsImpl {
-    fn execute(&mut self, query: &str) -> anyhow::Result<()> {
-        println!("Executing query: {query}");
+    async fn execute(&mut self, query: &str) -> anyhow::Result<()> {
         let mut parser = Parser::new(&GenericDialect);
         parser = parser.with_options(ParserOptions {
             trailing_commas: true,
@@ -83,20 +81,98 @@ impl EngineInterface for PolarsImpl {
         let ast = parser.try_with_sql(query)?.parse_statements()?;
 
         for statement in ast {
-            // println!(
-            //     "Executing parse query statement: {}",
-            //     serde_json::to_string_pretty(&statement)?
-            // );
+            println!("\n$ {}", statement.to_string());
             // TODO(alex): Table loading should be column aware so we don't load unnecessary
             // columns here.
-            let transformed_stmt = self.load_tables(&statement)?;
-            // println!(
-            //     "Transformed query statement: {}",
-            //     serde_json::to_string_pretty(&transformed_stmt)?
-            // );
-            let res = self.context.execute(&transformed_stmt.to_string())?;
-            print!("Results:\n{}", res.collect()?);
+            let res: LazyFrame = tokio::task::block_in_place(|| {
+                self.load_tables(&statement).and_then(|transformed_stmt| {
+                    self.context
+                        .execute(&transformed_stmt.to_string())
+                        .map_err(|error| error.into())
+                })
+            })?;
+            println!("Results:\n{}", res.collect()?);
         }
         Ok(())
     }
+}
+
+#[derive(Default)]
+struct DataFusionImpl {
+    fs_name_to_table_name: BTreeMap<String, String>,
+    context: datafusion::execution::context::SessionContext,
+}
+
+impl DataFusionImpl {
+    async fn load_tables(&mut self, query: &ast::Statement) -> anyhow::Result<ast::Statement> {
+        let mut rewritten = query.clone();
+        let mut new_tables = Vec::new();
+        ast::visit_relations_mut(&mut rewritten, |table| {
+            let symbol_or_file: &str = &table.0[0].value;
+            let table_name = if let Some(table_name) = self.fs_name_to_table_name.get(symbol_or_file) {
+                table_name.to_string()
+            } else {
+                let table_name = derive_table_from_fs_name(symbol_or_file);
+                new_tables.push((symbol_or_file.to_string(), table_name.clone()));
+                table_name
+            };
+            table.0[0].value = table.0[0].value.replace(symbol_or_file, &table_name);
+            core::ops::ControlFlow::<()>::Continue(())
+        });
+
+        for (fs_name, table_name) in new_tables {
+            let res = self
+                .context
+                .register_parquet(&table_name, &fs_name, ParquetReadOptions::default())
+                .await;
+            match res {
+                Ok(()) => {
+                    self.fs_name_to_table_name
+                        .insert(fs_name.to_string(), table_name.clone());
+                }
+                Err(error) => println!(
+                    "Warning -- loading referenced parquet path ({}) failed with error: {}",
+                    fs_name, error
+                ),
+            }
+        }
+        Ok(rewritten)
+    }
+}
+
+#[async_trait::async_trait]
+impl EngineInterface for DataFusionImpl {
+    async fn execute(&mut self, query: &str) -> anyhow::Result<()> {
+        let parser = Parser::new(&GenericDialect).with_options(ParserOptions {
+            trailing_commas: true,
+            ..Default::default()
+        });
+
+        let ast = parser.try_with_sql(query)?.parse_statements()?;
+
+        for statement in ast {
+            println!("\n$ {}", statement.to_string());
+            // TODO(alex): Table loading should be column aware so we don't load unnecessary
+            // columns here.
+            let transformed_stmt = self.load_tables(&statement).await?;
+            let results = self.context.sql(&transformed_stmt.to_string()).await?;
+            let pretty_results =
+                arrow::util::pretty::pretty_format_batches(&results.collect().await?)?.to_string();
+            println!("Results:\n{}", pretty_results);
+        }
+        Ok(())
+    }
+}
+
+fn derive_table_from_fs_name(fs_name: &str) -> String {
+    format!(
+        "tbl_{}",
+        fs_name
+            .split('/')
+            .last()
+            .unwrap()
+            .replace(".", "_")
+            .replace("-", "_")
+            .replace("*", "_")
+    )
 }
