@@ -34,6 +34,8 @@ impl Engine {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    use futures::stream::StreamExt as _;
+
     let args = Args::parse();
 
     println!(
@@ -43,5 +45,15 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let mut engine = args.engine.new()?;
-    engine.execute(&args.command).await
+    let executions = engine.execute(&args.command).await?;
+    for (statement, mut stream) in executions {
+        println!("\n$ {}", statement.to_string());
+        let mut batches = Vec::new();
+        while let Some(items) = stream.next().await {
+            batches.push(items?);
+        }
+        let pretty_results = arrow::util::pretty::pretty_format_batches(&batches)?.to_string();
+        println!("Results:\n{}", pretty_results);
+    }
+    Ok(())
 }

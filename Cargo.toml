@@ -7,14 +7,21 @@ resolver="2"
 
 [workspace.dependencies]
 anyhow = "1.0.86"
-arrow = "52.0.0"
+arrow = { version = "51.0.0" }
 async-trait = "0.1.80"
 clap = { version = "4.5.7", features = ["derive"] }
-datafusion = "39.0.0"
+datafusion = "38.0.0"
 duckdb = "0.10.2"
-polars = { version = "0.40.0", features = ["sql", "parquet"] }
+futures = "*"
+futures-util = { version = "*", features = ["alloc"] }
+pin-project = "1.1.5"
+polars = { version = "0.40.0", features = ["sql", "parquet", "polars-io"] }
+polars-arrow = "*"
+polars-io = { version = "*", features = ["ipc", "ipc_streaming"] }
 polars-lazy = { version = "*", features = ["parquet"] } # Version set based on inclusion by `polars` (above)
 serde = "1.0.203"
 serde_json = "1.0.117"
 sqlparser = { version = "0.47.0", features = ["serde", "visitor"] }
 tokio = { version = "1.38.0", features = ["full"] }
+tokio-util = { version = "*", features = ["io-util"] }
+tokio-stream = "0.1.15"

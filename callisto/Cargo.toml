@@ -10,9 +10,15 @@ async-trait = { workspace = true }
 clap = { workspace = true }
 datafusion = { workspace = true }
 duckdb = { workspace = true }
+futures = { workspace = true }
+pin-project = { workspace = true }
 polars = { workspace = true }
+polars-io = { workspace = true }
+polars-arrow  = { workspace = true }
 polars-lazy = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sqlparser = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
+tokio-stream = { workspace = true }
