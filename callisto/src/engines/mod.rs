@@ -1,11 +1,19 @@
+use core::pin::Pin;
 use std::collections::BTreeMap;
+use std::sync::Arc;
+
+use futures::Stream;
 
 use sqlparser::ast;
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
+use arrow::record_batch::RecordBatch;
 use datafusion::datasource::file_format::options::ParquetReadOptions;
+use datafusion::physical_plan::SendableRecordBatchStream;
 use polars_lazy::frame::LazyFrame;
+
+mod polars_to_arrow;
 
 pub enum Engine {
     Polars,
@@ -25,7 +33,10 @@ impl Engine {
 
 #[async_trait::async_trait]
 pub trait EngineInterface {
-    async fn execute(&mut self, query: &str) -> anyhow::Result<()>;
+    async fn execute(
+        &mut self,
+        query: &str,
+    ) -> anyhow::Result<Vec<(sqlparser::ast::Statement, SendableRecordBatchStream)>>;
 }
 
 #[derive(Default)]
@@ -72,7 +83,11 @@ impl PolarsImpl {
 
 #[async_trait::async_trait]
 impl EngineInterface for PolarsImpl {
-    async fn execute(&mut self, query: &str) -> anyhow::Result<()> {
+    async fn execute(
+        &mut self,
+        query: &str,
+    ) -> anyhow::Result<Vec<(sqlparser::ast::Statement, SendableRecordBatchStream)>> {
+        use polars::prelude::SerWriter as _;
         let mut parser = Parser::new(&GenericDialect);
         parser = parser.with_options(ParserOptions {
             trailing_commas: true,
@@ -81,20 +96,86 @@ impl EngineInterface for PolarsImpl {
 
         let ast = parser.try_with_sql(query)?.parse_statements()?;
 
+        let mut executions = Vec::new();
         for statement in ast {
-            println!("\n$ {}", statement.to_string());
             // TODO(alex): Table loading should be column aware so we don't load unnecessary
             // columns here.
-            let res: LazyFrame = tokio::task::block_in_place(|| {
+            let mut df: polars::frame::DataFrame = tokio::task::block_in_place(|| {
                 self.load_tables(&statement).and_then(|transformed_stmt| {
-                    self.context
+                    let lazy_frame = self
+                        .context
                         .execute(&transformed_stmt.to_string())
-                        .map_err(|error| error.into())
+                        .map_err(|error| error.into());
+                    lazy_frame.and_then(|frame| frame.collect().map_err(|error| error.into()))
                 })
             })?;
-            println!("Results:\n{}", res.collect()?);
+            let schema = Arc::new(polars_to_arrow::convert_schema(
+                df.schema().to_arrow(false),
+            )?);
+            let (arrow_client, mut polars_server) = tokio::io::duplex(1024);
+            // TODO(alex): Figure out how to refactor this so it performs fewer (preferably no)
+            // copies.  Perhaps convert the Polars arrays in memory, returning a an object
+            // implmenting the stream which holds the dataframe memory?
+            let polars_writer_handle = tokio::task::spawn_blocking(move || {
+                polars_io::ipc::IpcStreamWriter::new(tokio_util::io::SyncIoBridge::new(
+                    &mut polars_server,
+                ))
+                .finish(&mut df)
+            });
+            let (datafusion_tx, datafusion_rx) = tokio::sync::mpsc::channel(100);
+            // TODO(alex): Handle this join
+            let _join_handle = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
+                let arrow_stream = datafusion::common::arrow::ipc::reader::StreamReader::try_new(tokio_util::io::SyncIoBridge::new(arrow_client), None)?;
+                for record_batch in arrow_stream {
+                    datafusion_tx.blocking_send(record_batch.map_err(|error| {
+                        datafusion::error::DataFusionError::ArrowError(error, None)
+                    }))?;
+                }
+                Ok(polars_writer_handle)
+            });
+            let stream: SendableRecordBatchStream = Box::pin(StreamFromPolars {
+                stream: tokio_stream::wrappers::ReceiverStream::new(datafusion_rx),
+                schema,
+            });
+            // TODO(alex): Figure out how to push this streamification down into the execution
+            // instead of post-collection.
+            executions.push((statement, stream));
         }
-        Ok(())
+        Ok(executions)
+    }
+}
+
+#[pin_project::pin_project]
+struct StreamFromPolars<S> {
+    #[pin]
+    stream: S,
+    schema: Arc<arrow::datatypes::Schema>,
+}
+
+impl<S> datafusion::physical_plan::RecordBatchStream for StreamFromPolars<S>
+where
+    S: Stream<Item = Result<RecordBatch, datafusion::common::DataFusionError>>,
+{
+    fn schema(&self) -> Arc<arrow::datatypes::Schema> {
+        self.schema.clone()
+    }
+}
+
+impl<S> Stream for StreamFromPolars<S>
+where
+    S: Stream<Item = Result<RecordBatch, datafusion::common::DataFusionError>>,
+{
+    type Item = S::Item;
+
+    fn poll_next(
+        self: Pin<&mut Self>,
+        cx: &mut futures::task::Context<'_>,
+    ) -> futures::task::Poll<Option<Self::Item>> {
+        self.project().stream.poll_next(cx)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.stream.size_hint()
     }
 }
 
@@ -147,7 +228,10 @@ impl DuckDbImpl {
 
 #[async_trait::async_trait]
 impl EngineInterface for DuckDbImpl {
-    async fn execute(&mut self, query: &str) -> anyhow::Result<()> {
+    async fn execute(
+        &mut self,
+        query: &str,
+    ) -> anyhow::Result<Vec<(sqlparser::ast::Statement, SendableRecordBatchStream)>> {
         let mut parser = Parser::new(&GenericDialect);
         parser = parser.with_options(ParserOptions {
             trailing_commas: true,
@@ -156,8 +240,8 @@ impl EngineInterface for DuckDbImpl {
 
         let ast = parser.try_with_sql(query)?.parse_statements()?;
 
+        let mut executions = Vec::new();
         for statement in ast {
-            println!("\n$ {}", statement.to_string());
             // TODO(alex): Table loading should be column aware so we don't load unnecessary
             // columns here.
             let res: Vec<duckdb::arrow::record_batch::RecordBatch> =
@@ -171,10 +255,15 @@ impl EngineInterface for DuckDbImpl {
                             .map_err(|error| error.into())
                     })
                 })?;
-            println!("Results:");
-            duckdb::arrow::util::pretty::print_batches(&res)?;
+            let schema = res[0].schema().clone();
+            let mem_stream =
+                datafusion::physical_plan::memory::MemoryStream::try_new(res, schema, None)?;
+            let stream: SendableRecordBatchStream = Box::pin(mem_stream);
+            // TODO(alex): Figure out how to push this streamification down into the execution
+            // instead of post-collection.
+            executions.push((statement, stream));
         }
-        Ok(())
+        Ok(executions)
     }
 }
 
@@ -224,7 +313,10 @@ impl DataFusionImpl {
 
 #[async_trait::async_trait]
 impl EngineInterface for DataFusionImpl {
-    async fn execute(&mut self, query: &str) -> anyhow::Result<()> {
+    async fn execute(
+        &mut self,
+        query: &str,
+    ) -> anyhow::Result<Vec<(sqlparser::ast::Statement, SendableRecordBatchStream)>> {
         let parser = Parser::new(&GenericDialect).with_options(ParserOptions {
             trailing_commas: true,
             ..Default::default()
@@ -232,17 +324,20 @@ impl EngineInterface for DataFusionImpl {
 
         let ast = parser.try_with_sql(query)?.parse_statements()?;
 
+        let mut executions = Vec::new();
         for statement in ast {
-            println!("\n$ {}", statement.to_string());
             // TODO(alex): Table loading should be column aware so we don't load unnecessary
             // columns here.
             let transformed_stmt = self.load_tables(&statement).await?;
-            let results = self.context.sql(&transformed_stmt.to_string()).await?;
-            let pretty_results =
-                arrow::util::pretty::pretty_format_batches(&results.collect().await?)?.to_string();
-            println!("Results:\n{}", pretty_results);
+            let stream = self
+                .context
+                .sql(&transformed_stmt.to_string())
+                .await?
+                .execute_stream()
+                .await?;
+            executions.push((statement, stream))
         }
-        Ok(())
+        Ok(executions)
     }
 }
 
