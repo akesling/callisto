@@ -3,26 +3,16 @@ use std::sync::Arc;
 use arrow::datatypes::DataType;
 use polars::datatypes::ArrowDataType as PlDataType;
 
-pub fn convert_array(
+pub fn _convert_array(
     array: &Box<dyn polars_arrow::array::Array>,
 ) -> anyhow::Result<Arc<dyn arrow::array::Array>> {
     match array.data_type() {
         PlDataType::Int32 => {
-            if let Some(arr) = array
+            if let Some(_arr) = array
                 .as_any()
                 .downcast_ref::<polars_arrow::array::Int32Array>()
             {
                 todo!()
-                // let values = arr.values();
-                // let validity = arr.validity().map(|b| b.buffer().clone());
-                // let values_buffer = Buffer::from_slice_ref(values);
-
-                // let arrow_array = ArrowInt32Array::from_data(
-                //     arrow::datatypes::DataType::Int32,
-                //     values_buffer,
-                //     validity,
-                // );
-                // Ok(Arc::new(arrow_array))
             } else {
                 anyhow::bail!(
                     "Polars array of type {} failed to downcast to array of type {}",
