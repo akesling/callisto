@@ -125,7 +125,10 @@ impl EngineInterface for PolarsImpl {
             let (datafusion_tx, datafusion_rx) = tokio::sync::mpsc::channel(100);
             // TODO(alex): Handle this join
             let _join_handle = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
-                let arrow_stream = datafusion::common::arrow::ipc::reader::StreamReader::try_new(tokio_util::io::SyncIoBridge::new(arrow_client), None)?;
+                let arrow_stream = datafusion::common::arrow::ipc::reader::StreamReader::try_new(
+                    tokio_util::io::SyncIoBridge::new(arrow_client),
+                    None,
+                )?;
                 for record_batch in arrow_stream {
                     datafusion_tx.blocking_send(record_batch.map_err(|error| {
                         datafusion::error::DataFusionError::ArrowError(error, None)
