@@ -25,6 +25,7 @@ enum Command {
         #[arg(long, short, default_value_t, value_enum)]
         engine: Engine,
     },
+    Console {},
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, Serialize, Default)]
@@ -82,6 +83,10 @@ async fn main() -> anyhow::Result<()> {
 
             callisto::Repl::run(&mut engine, tokio::io::stdin(), tokio::io::stdout()).await?;
             Ok(())
+        }
+        Command::Console {} => {
+            println!("Console not yet supported");
+            std::process::exit(1);
         }
     }
 }
