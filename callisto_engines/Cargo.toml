@@ -1,5 +1,5 @@
 [package]
-name = "callisto"
+name = "callisto-engines"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,13 +8,17 @@ anyhow = { workspace = true }
 arrow = { workspace = true }
 async-trait = { workspace = true }
 clap = { workspace = true }
+datafusion = { workspace = true }
+duckdb = { workspace = true }
 futures = { workspace = true }
 pin-project = { workspace = true }
+polars = { workspace = true }
+polars-io = { workspace = true }
+polars-arrow  = { workspace = true }
+polars-lazy = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sqlparser = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tokio-stream = { workspace = true }
-
-callisto-engines = { workspace = true }

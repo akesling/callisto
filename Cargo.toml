@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "callisto",
+    "callisto_engines",
 ]
 
 resolver="2"
@@ -25,3 +26,5 @@ sqlparser = { version = "0.47.0", features = ["serde", "visitor"] }
 tokio = { version = "1.38.0", features = ["full"] }
 tokio-util = { version = "*", features = ["io-util"] }
 tokio-stream = "0.1.15"
+
+callisto-engines = { path = "callisto_engines" }

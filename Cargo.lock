@@ -692,6 +692,25 @@ dependencies = [
  "anyhow",
  "arrow",
  "async-trait",
+ "callisto-engines",
+ "clap",
+ "futures",
+ "pin-project",
+ "serde",
+ "serde_json",
+ "sqlparser 0.47.0",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+]
+
+[[package]]
+name = "callisto-engines"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arrow",
+ "async-trait",
  "clap",
  "datafusion",
  "duckdb",

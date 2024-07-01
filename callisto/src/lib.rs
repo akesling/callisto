@@ -1,2 +1,1 @@
-mod engines;
-pub use engines::{Engine, EngineInterface};
+pub use callisto_engines::{Engine, EngineInterface};
