@@ -3,13 +3,18 @@ pub use callisto_engines::{Engine, EngineInterface};
 pub struct Repl {}
 
 impl Repl {
-    pub async fn run(engine: &mut Box<dyn EngineInterface>) -> anyhow::Result<()> {
+    pub async fn run<Input>(
+        engine: &mut Box<dyn EngineInterface>,
+        input: Input,
+    ) -> anyhow::Result<()>
+    where
+        Input: tokio::io::AsyncRead + Unpin,
+    {
         use futures::stream::StreamExt as _;
         use std::io::Write as _;
         use tokio::io::AsyncBufReadExt as _;
 
-        let stdin = tokio::io::stdin();
-        let reader = tokio::io::BufReader::new(stdin);
+        let reader = tokio::io::BufReader::new(input);
         let mut lines = reader.lines();
 
         while let Some(line) = {

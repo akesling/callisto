@@ -80,7 +80,7 @@ async fn main() -> anyhow::Result<()> {
         } => {
             let mut engine = engine_type.new()?;
 
-            callisto::Repl::run(&mut engine).await?;
+            callisto::Repl::run(&mut engine, tokio::io::stdin()).await?;
             Ok(())
         }
     }
