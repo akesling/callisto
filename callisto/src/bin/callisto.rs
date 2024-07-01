@@ -11,6 +11,7 @@ struct Args {
 
 #[derive(clap::Subcommand, Debug)]
 enum Command {
+    /// Execute individual commands on an engine of your choice, default being DataFusion
     Exec {
         // TODO(akesling): Add output format control
         /// Command to execute
@@ -20,11 +21,13 @@ enum Command {
         #[arg(long, short, default_value_t, value_enum)]
         engine: Engine,
     },
+    /// Drop into a read, eval, print loop for an engine of your choice, default being DataFusion
     Repl {
         /// Engine on which to execute
         #[arg(long, short, default_value_t, value_enum)]
         engine: Engine,
     },
+    /// Load the full Callisto console
     Console {},
 }
 
