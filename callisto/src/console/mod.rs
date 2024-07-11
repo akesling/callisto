@@ -9,8 +9,9 @@ use ratatui::{
         terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
         ExecutableCommand,
     },
+    layout,
     style::Stylize,
-    widgets::Paragraph,
+    widgets::{Block, Borders, Paragraph},
     Terminal,
 };
 
@@ -33,14 +34,25 @@ where
     let mut terminal = Terminal::new(CrosstermBackend::new(output))?;
     terminal.clear()?;
 
+    let layout = layout::Layout::default()
+        .direction(layout::Direction::Vertical)
+        .constraints(vec![
+            layout::Constraint::Percentage(20),
+            layout::Constraint::Percentage(80),
+        ]);
+
     loop {
         terminal.draw(|frame| {
-            let area = frame.size();
+            let layout = layout.split(frame.size());
+
             frame.render_widget(
-                Paragraph::new("Callisto console goes here! (press 'q' to quit)")
-                    .white()
-                    .on_blue(),
-                area,
+                Paragraph::new("Code console goes here! (press 'q' to quit)")
+                    .block(Block::new().borders(Borders::ALL)),
+                layout[0],
+            );
+            frame.render_widget(
+                Paragraph::new("Data console goes here!").block(Block::new().borders(Borders::ALL)),
+                layout[1],
             );
         })?;
 
