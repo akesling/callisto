@@ -1,5 +1,7 @@
 pub use callisto_engines::{Engine, EngineInterface};
 
+pub mod console;
+
 pub struct Repl<Output> {
     output: Output,
 }

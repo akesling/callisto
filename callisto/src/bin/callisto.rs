@@ -88,8 +88,15 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Command::Console {} => {
-            println!("Console not yet supported");
-            std::process::exit(1);
+            tokio::task::spawn_blocking(move || callisto::console::setup_term_for_console())
+                .await??;
+
+            let stdout = tokio_util::io::SyncIoBridge::new(tokio::io::stdout());
+            tokio::task::spawn_blocking(move || callisto::console::run_console(stdout)).await??;
+
+            tokio::task::spawn_blocking(move || callisto::console::teardown_term_for_console())
+                .await??;
+            Ok(())
         }
     }
 }
