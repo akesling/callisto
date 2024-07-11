@@ -10,7 +10,6 @@ use ratatui::{
         ExecutableCommand,
     },
     layout,
-    style::Stylize,
     widgets::{Block, Borders, Paragraph},
     Terminal,
 };
